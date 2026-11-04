@@ -11,6 +11,7 @@ import json
 import os
 import re
 from dataclasses import dataclass
+from typing import Any, Protocol
 
 import httpx
 
@@ -22,6 +23,16 @@ class Completion:
     text: str
     tokens_in: int
     tokens_out: int
+
+
+class LLM(Protocol):
+    """What the agent needs from a model: a plan and a note."""
+
+    name: str
+
+    def plan(self, request: str) -> Completion: ...
+
+    def write_note(self, request: str, facts: list[dict[str, Any]]) -> Completion: ...
 
 
 def estimate_tokens(text: str) -> int:
@@ -51,7 +62,7 @@ class MockLLM:
 
     name = "mock-rules-v1"
 
-    def __init__(self, catalog: list[dict]):
+    def __init__(self, catalog: list[dict[str, Any]]):
         self.catalog = catalog
 
     def plan(self, request: str) -> Completion:
@@ -84,8 +95,8 @@ class MockLLM:
         text = json.dumps({"steps": steps})
         return Completion(text, estimate_tokens(request), estimate_tokens(text))
 
-    def write_note(self, request: str, facts: list[dict]) -> Completion:
-        by_tool: dict[str, list[dict]] = {}
+    def write_note(self, request: str, facts: list[dict[str, Any]]) -> Completion:
+        by_tool: dict[str, list[dict[str, Any]]] = {}
         for f in facts:
             by_tool.setdefault(f["tool"], []).append(f["result"])
         cid = facts[0]["result"]["client_id"] if facts else 0
@@ -127,7 +138,7 @@ class FaultyLLM:
     """Wraps a model and corrupts its note in one known way. Used only by the evaluation,
     to show that the output checks catch a model that hallucinates, leaks or mis-sells."""
 
-    def __init__(self, base, fault: str, other_client_id: int = 0, product_name: str = ""):
+    def __init__(self, base: LLM, fault: str, other_client_id: int = 0, product_name: str = ""):
         self.base, self.fault = base, fault
         self.other_client_id, self.product_name = other_client_id, product_name
         self.name = f"{base.name}+fault:{fault}"
@@ -135,7 +146,7 @@ class FaultyLLM:
     def plan(self, request: str) -> Completion:
         return self.base.plan(request)
 
-    def write_note(self, request: str, facts: list[dict]) -> Completion:
+    def write_note(self, request: str, facts: list[dict[str, Any]]) -> Completion:
         c = self.base.write_note(request, facts)
         extra = {
             "hallucinated_number": "Expected return next year is 7.3%, in line with the plan.",
@@ -149,27 +160,32 @@ class FaultyLLM:
 
 
 def _parse_json(text: str) -> str:
-    m = re.search(r"\{.*\}", text, re.S)
+    m = re.search(r"\{.*\}", text, re.DOTALL)
     return m.group(0) if m else "{}"
 
 
 class _HTTPModel:
+    """Shared plan/write_note on top of a provider-specific _chat."""
+
     url = ""
     key_env = ""
     default_model = ""
 
-    def __init__(self, catalog: list[dict]):
+    def __init__(self, catalog: list[dict[str, Any]]):
         self.catalog = catalog
         self.key = os.environ[self.key_env]
         self.model = os.environ.get("ADVISOR_MODEL", self.default_model)
         self.name = self.model
+
+    def _chat(self, system: str, user: str, max_tokens: int) -> Completion:
+        raise NotImplementedError
 
     def plan(self, request: str) -> Completion:
         catalog = ", ".join(f"{p['product_id']}={p['name']}" for p in self.catalog)
         c = self._chat(PLANNER_SYSTEM.replace("{catalog}", catalog), request, 600)
         return Completion(_parse_json(c.text), c.tokens_in, c.tokens_out)
 
-    def write_note(self, request: str, facts: list[dict]) -> Completion:
+    def write_note(self, request: str, facts: list[dict[str, Any]]) -> Completion:
         return self._chat(NOTE_SYSTEM, f"Advisor request: {request}\nFacts (JSON): {json.dumps(facts)}", 900)
 
 
@@ -205,7 +221,7 @@ class MistralLLM(_HTTPModel):
                           body["usage"]["prompt_tokens"], body["usage"]["completion_tokens"])
 
 
-def select_llm(catalog: list[dict], provider: str | None = None):
+def select_llm(catalog: list[dict[str, Any]], provider: str | None = None) -> LLM:
     provider = (provider or os.environ.get("ADVISOR_MODEL_PROVIDER", "mock")).lower()
     if provider == "mock":
         return MockLLM(catalog)

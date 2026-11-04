@@ -5,13 +5,14 @@ from __future__ import annotations
 import hashlib
 import json
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 GENESIS = "0" * 64
 
 
-def sha256_json(obj) -> str:
+def sha256_json(obj: object) -> str:
     return hashlib.sha256(json.dumps(obj, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
@@ -26,11 +27,11 @@ class AuditLog:
         if not self.path.exists() or self.path.stat().st_size == 0:
             return GENESIS
         last = self.path.read_text(encoding="utf-8").rstrip("\n").rsplit("\n", 1)[-1]
-        return json.loads(last)["hash"]
+        return str(json.loads(last)["hash"])
 
-    def append(self, event: str, payload: dict) -> dict:
+    def append(self, event: str, payload: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
-            entry = {"ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+            entry = {"ts": datetime.now(UTC).isoformat(timespec="milliseconds"),
                      "event": event, "prev_hash": self._last, **payload}
             entry["hash"] = sha256_json(entry)
             with self.path.open("a", encoding="utf-8") as fh:

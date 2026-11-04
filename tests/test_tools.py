@@ -1,8 +1,14 @@
 import pytest
 
 from advisor import data
-from advisor.tools import (ToolError, check_suitability, get_portfolio, get_recent_transactions,
-                           get_risk_profile, validate_args)
+from advisor.tools import (
+    ToolError,
+    check_suitability,
+    get_portfolio,
+    get_recent_transactions,
+    get_risk_profile,
+    validate_args,
+)
 
 
 @pytest.fixture(scope="module")

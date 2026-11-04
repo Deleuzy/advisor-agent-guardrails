@@ -6,9 +6,10 @@ leave the database (data minimisation before any redaction is needed).
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, Callable
+from typing import Any, cast
 
 from .data import AS_OF
 
@@ -23,24 +24,24 @@ def _client(con: sqlite3.Connection, client_id: int) -> sqlite3.Row:
     row = con.execute("SELECT * FROM clients WHERE client_id = ?", (client_id,)).fetchone()
     if row is None:
         raise ToolError(f"unknown client {client_id}")
-    return row
+    return cast(sqlite3.Row, row)
 
 
 def _product(con: sqlite3.Connection, product_id: str) -> sqlite3.Row:
     row = con.execute("SELECT * FROM products WHERE product_id = ?", (product_id,)).fetchone()
     if row is None:
         raise ToolError(f"unknown product {product_id}")
-    return row
+    return cast(sqlite3.Row, row)
 
 
-def get_risk_profile(con, client_id: int) -> dict:
+def get_risk_profile(con: sqlite3.Connection, client_id: int) -> dict[str, Any]:
     c = _client(con, client_id)
     return {"client_id": c["client_id"], "client_name": c["name"], "risk_profile": c["risk_profile"],
             "risk_scale_max": 7, "horizon_years": c["horizon_years"],
             "complex_experience": bool(c["complex_experience"])}
 
 
-def get_portfolio(con, client_id: int) -> dict:
+def get_portfolio(con: sqlite3.Connection, client_id: int) -> dict[str, Any]:
     _client(con, client_id)
     rows = con.execute("""SELECT h.product_id, p.name, p.type, p.risk_class, h.value_dkk
                           FROM holdings h JOIN products p USING(product_id)
@@ -54,7 +55,7 @@ def get_portfolio(con, client_id: int) -> dict:
             "weighted_risk_class": weighted}
 
 
-def get_recent_transactions(con, client_id: int, days: int = RECENT_DAYS) -> dict:
+def get_recent_transactions(con: sqlite3.Connection, client_id: int, days: int = RECENT_DAYS) -> dict[str, Any]:
     _client(con, client_id)
     since = (AS_OF - timedelta(days=days)).isoformat()
     rows = con.execute("""SELECT date, amount_dkk, memo FROM transactions
@@ -65,7 +66,7 @@ def get_recent_transactions(con, client_id: int, days: int = RECENT_DAYS) -> dic
             "net_flow_dkk": sum(t["amount_dkk"] for t in tx), "transactions": tx}
 
 
-def check_suitability(con, client_id: int, product_id: str) -> dict:
+def check_suitability(con: sqlite3.Connection, client_id: int, product_id: str) -> dict[str, Any]:
     """The suitability rule, in code: risk class within profile, complex products only with
     documented experience, horizon at least the product's minimum."""
     c, p = _client(con, client_id), _product(con, product_id)
@@ -85,7 +86,7 @@ def check_suitability(con, client_id: int, product_id: str) -> dict:
 @dataclass(frozen=True)
 class Tool:
     name: str
-    fn: Callable[..., dict]
+    fn: Callable[..., dict[str, Any]]
     args: dict[str, type]          # required argument name -> type
     optional: dict[str, type]
 
@@ -117,7 +118,7 @@ def validate_args(tool: str, args: dict[str, Any]) -> dict[str, Any]:
     extra = set(args) - set(allowed)
     if extra:
         raise ToolError(f"unexpected arguments for {tool}: {sorted(extra)}")
-    for name, typ in spec.args.items():
+    for name in spec.args:
         if name not in args:
             raise ToolError(f"missing argument {name!r} for {tool}")
     for name, value in args.items():
@@ -128,6 +129,6 @@ def validate_args(tool: str, args: dict[str, Any]) -> dict[str, Any]:
     return args
 
 
-def product_catalog(con) -> list[dict]:
+def product_catalog(con: sqlite3.Connection) -> list[dict[str, Any]]:
     return [dict(r) for r in con.execute("SELECT product_id, name, risk_class FROM products")]
 

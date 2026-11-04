@@ -16,11 +16,11 @@ MAX_REQUEST_CHARS = 1000
 
 CPR_RE = re.compile(r"\b\d{6}-?\d{4}\b")
 ACCOUNT_RE = re.compile(r"\b\d{4}[ -]?\d{10}\b")
-IBAN_RE = re.compile(r"\bDK\d{2}(?: ?\d{4}){3} ?\d{2}\b", re.I)
+IBAN_RE = re.compile(r"\bDK\d{2}(?: ?\d{4}){3} ?\d{2}\b", re.IGNORECASE)
 EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.]+\b")
 PHONE_RE = re.compile(r"\+45 ?\d{2} ?\d{2} ?\d{2} ?\d{2}\b")
 CLIENT_TOKEN_RE = re.compile(r"\[CLIENT_(\d+)\]")
-CLIENT_REF_RE = re.compile(r"\b(?:client|customer|kunde)\s*(?:no\.?|number|id|nr\.?)?\s*#?\s*(\d{4})\b", re.I)
+CLIENT_REF_RE = re.compile(r"\b(?:client|customer|kunde)\s*(?:no\.?|number|id|nr\.?)?\s*#?\s*(\d{4})\b", re.IGNORECASE)
 
 INJECTION_PATTERNS = [
     r"\b(ignore|disregard|forget|override)\b.{0,30}\b(instructions?|rules|prompt|guidelines|policy|policies|guardrails?)\b",
@@ -41,7 +41,7 @@ INJECTION_PATTERNS = [
     r"\bignorer\b|\bglem\b.{0,20}\binstruktioner\b",
     r"<\|.*?\|>|\[/?INST\]",
 ]
-INJECTION_RE = [re.compile(p, re.I) for p in INJECTION_PATTERNS]
+INJECTION_RE = [re.compile(p, re.IGNORECASE) for p in INJECTION_PATTERNS]
 
 
 @dataclass
@@ -50,7 +50,7 @@ class Decision:
     outcome: str          # pass | flagged | fail
     detail: str = ""
 
-    def as_dict(self) -> dict:
+    def as_dict(self) -> dict[str, Any]:
         return {"check": self.check, "outcome": self.outcome, "detail": self.detail}
 
 
@@ -80,15 +80,15 @@ class Redactor:
     tool output and in the advisor's own request. The model works with [CLIENT_1042];
     the real name is put back only after the output checks have passed."""
 
-    def __init__(self, clients: list[dict]):
+    def __init__(self, clients: list[dict[str, Any]]):
         self.names = {c["client_id"]: c["name"] for c in clients}
-        self._name_re = [(cid, re.compile(r"\b" + re.escape(n) + r"\b", re.I))
+        self._name_re = [(cid, re.compile(r"\b" + re.escape(n) + r"\b", re.IGNORECASE))
                          for cid, n in sorted(self.names.items(), key=lambda kv: -len(kv[1]))]
 
     def redact(self, text: str) -> tuple[str, dict[str, int]]:
         counts: dict[str, int] = {}
 
-        def sub(rx, repl, s, key):
+        def sub(rx: re.Pattern[str], repl: str, s: str, key: str) -> str:
             s, n = rx.subn(repl, s)
             if n:
                 counts[key] = counts.get(key, 0) + n
@@ -142,12 +142,13 @@ def scan_tool_output(obj: Any, path: str = "") -> tuple[Any, list[str]]:
             flagged += f
         return out, flagged
     if isinstance(obj, dict):
-        out, flagged = {}, []
+        out_d: dict[str, Any] = {}
+        flagged = []
         for k, v in obj.items():
             c, f = scan_tool_output(v, f"{path}.{k}" if path else k)
-            out[k] = c
+            out_d[k] = c
             flagged += f
-        return out, flagged
+        return out_d, flagged
     return obj, []
 
 
@@ -167,7 +168,7 @@ def allowed_numbers(*sources: Any) -> set[str]:
     """Every number that appears anywhere in the tool results (and the request)."""
     out: set[str] = set()
 
-    def walk(o):
+    def walk(o: object) -> None:
         if isinstance(o, bool):
             return
         if isinstance(o, (int, float)):
@@ -199,8 +200,8 @@ class NoteContext:
     client_id: int
     all_client_ids: set[int]
     all_client_names: dict[int, str]
-    catalog: list[dict]                      # product_id, name, risk_class
-    facts: list[dict]                        # [{"tool", "args", "result"}] as given to the model
+    catalog: list[dict[str, Any]]                      # product_id, name, risk_class
+    facts: list[dict[str, Any]]                        # [{"tool", "args", "result"}] as given to the model
     request_text: str = ""
     decisions: list[Decision] = field(default_factory=list)
 
@@ -213,7 +214,7 @@ def check_note(note: str, ctx: NoteContext) -> list[Decision]:
     other_tokens = {int(x) for x in CLIENT_TOKEN_RE.findall(note)} - {ctx.client_id}
     other_ids = {int(x) for x in re.findall(r"\b(\d{4})\b", note)} & (ctx.all_client_ids - {ctx.client_id})
     other_names = [n for cid, n in ctx.all_client_names.items()
-                   if cid != ctx.client_id and re.search(r"\b" + re.escape(n) + r"\b", note, re.I)]
+                   if cid != ctx.client_id and re.search(r"\b" + re.escape(n) + r"\b", note, re.IGNORECASE)]
     leaks = sorted(other_tokens | other_ids)
     if leaks or other_names:
         out.append(Decision("other_client_data", "fail",

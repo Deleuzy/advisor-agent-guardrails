@@ -12,14 +12,23 @@ import json
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from . import data as data_mod
 from .audit import AuditLog, sha256_json
-from .guardrails import (Decision, NoteContext, Redactor, check_note, clients_mentioned,
-                         detect_injection, scan_tool_output, validate_input)
-from .llm import MockLLM, cost_usd, select_llm
+from .guardrails import (
+    Decision,
+    NoteContext,
+    Redactor,
+    check_note,
+    clients_mentioned,
+    detect_injection,
+    scan_tool_output,
+    validate_input,
+)
+from .llm import LLM, MockLLM, cost_usd, select_llm
 from .tools import NOTE_TOOL, TOOLS, ToolError, product_catalog, validate_args
 
 MAX_STEPS = 8
@@ -34,9 +43,9 @@ class RequestRecord:
     status: str = REFUSED
     client_id: int | None = None
     request_redacted: str = ""
-    plan: list[dict] = field(default_factory=list)
-    tool_calls: list[dict] = field(default_factory=list)
-    guardrails: list[dict] = field(default_factory=list)
+    plan: list[dict[str, Any]] = field(default_factory=list)
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    guardrails: list[dict[str, Any]] = field(default_factory=list)
     note: str | None = None
     refusal_reason: str | None = None
     model: str = ""
@@ -50,7 +59,7 @@ class RequestRecord:
     # what the model was sent, kept in memory only (for the evaluation's leakage test), never logged
     model_inputs: list[str] = field(default_factory=list, repr=False)
 
-    def public(self) -> dict:
+    def public(self) -> dict[str, Any]:
         d = asdict(self)
         d.pop("model_inputs")
         return d
@@ -63,7 +72,7 @@ class Refusal(Exception):
 
 
 class AdvisorAgent:
-    def __init__(self, llm=None, audit_path: Path | str = "logs/audit.jsonl", data_path: Path | None = None):
+    def __init__(self, llm: LLM | None = None, audit_path: Path | str = "logs/audit.jsonl", data_path: Path | None = None):
         self.con = data_mod.connect(data_path or data_mod.DATA_PATH)
         self.catalog = product_catalog(self.con)
         clients = [dict(r) for r in self.con.execute("SELECT client_id, name, advisor_id FROM clients")]
@@ -183,9 +192,9 @@ class AdvisorAgent:
             facts.append({"tool": s["tool"], "args": s["args"], "result": clean})
 
         # 7. redact the facts, then draft the note
-        counts: dict[str, int] = {}
-        facts_redacted = self.redactor.redact_obj(facts, counts)
-        self._decide(rec, "pii_redaction_facts", "pass", json.dumps(counts) if counts else "nothing to redact")
+        fact_counts: dict[str, int] = {}
+        facts_redacted = self.redactor.redact_obj(facts, fact_counts)
+        self._decide(rec, "pii_redaction_facts", "pass", json.dumps(fact_counts) if fact_counts else "nothing to redact")
         rec.model_inputs.append(redacted + json.dumps(facts_redacted, ensure_ascii=False))
         c = self.llm.write_note(redacted, facts_redacted)
         rec.tokens_in += c.tokens_in
@@ -219,9 +228,9 @@ class AdvisorAgent:
             raise PermissionError(f"advisor {advisor_id} does not own client {rec.client_id}")
         rec.status = APPROVED if approve else REJECTED
         rec.approver = advisor_id
-        rec.decided_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        rec.decided_at = datetime.now(UTC).isoformat(timespec="seconds")
         rec.decision_comment = comment
         self.audit.append("decision", {"request_id": request_id, "status": rec.status, "approver": advisor_id,
                                        "comment": comment,
-                                       "note_sha256": sha256_json(self.redactor.redact(rec.note)[0])})
+                                       "note_sha256": sha256_json(self.redactor.redact(rec.note or "")[0])})
         return rec

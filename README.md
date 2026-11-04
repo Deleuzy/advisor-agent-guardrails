@@ -120,6 +120,17 @@ This has not been run for the committed numbers; they come from the mock model o
 
 ## Running it
 
+With [uv](https://docs.astral.sh/uv/) (the lockfile pins every version):
+
+```bash
+uv sync
+uv run ruff check .                                 # lint
+uv run mypy                                         # strict type check of advisor/
+uv run pytest -q                                    # 67 tests
+```
+
+Or with pip:
+
 ```bash
 python -m venv .venv && .venv/bin/pip install -r requirements.txt -r requirements-dev.txt
 .venv/bin/python -m pytest -q                       # 67 tests
@@ -151,12 +162,13 @@ Last 90 days: 8 transactions, net flow 44,000 DKK.
 
 `.github/workflows/ci.yml`, every push:
 
-1. **Tests and evaluation gate**: pytest; regenerate the dataset and `git diff --exit-code`; run the evaluation with
+1. **Lint and strict types**: `uv sync --locked`, `ruff check`, `mypy` in strict mode (with the Pydantic plugin), pytest.
+2. **Tests and evaluation gate**: pytest; regenerate the dataset and `git diff --exit-code`; run the evaluation with
    `--compare results/eval_summary.json` (exit code 1 on a missed threshold or any changed outcome); `bash -n` on the
    AWS scripts.
-2. **Docker**: build the image, check it runs as uid 10001 (non-root), start it, create a request, approve it, check
+3. **Docker**: build the image, check it runs as uid 10001 (non-root), start it, create a request, approve it, check
    that an injection is refused and that the audit chain verifies with 3 lines.
-3. **Publish** (main only, after both pass): push the image to `ghcr.io/deleuzy/advisor-agent-guardrails`.
+4. **Publish** (main only, after the tests and Docker pass): push the image to `ghcr.io/deleuzy/advisor-agent-guardrails`.
 
 ## AWS
 

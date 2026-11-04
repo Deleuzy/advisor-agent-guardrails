@@ -7,6 +7,7 @@ only reaches clients in their own book and only approves drafts for those client
 from __future__ import annotations
 
 import os
+from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
@@ -26,25 +27,25 @@ class Decision(BaseModel):
 
 
 @app.get("/health")
-def health():
+def health() -> dict[str, Any]:
     return {"status": "ok", "model": agent.llm.name}
 
 
 @app.post("/requests")
-def create(body: AdvisorRequest, x_advisor_id: str = Header(...)):
+def create(body: AdvisorRequest, x_advisor_id: str = Header(...)) -> dict[str, Any]:
     rec = agent.handle(x_advisor_id, body.text)
     return rec.public()
 
 
 @app.get("/requests/{request_id}")
-def get(request_id: str, x_advisor_id: str = Header(...)):
+def get(request_id: str, x_advisor_id: str = Header(...)) -> dict[str, Any]:
     rec = agent.requests.get(request_id)
     if rec is None or rec.advisor_id != x_advisor_id:
         raise HTTPException(404, "not found")
     return rec.public()
 
 
-def _decide(request_id: str, advisor_id: str, approve: bool, comment: str | None):
+def _decide(request_id: str, advisor_id: str, approve: bool, comment: str | None) -> dict[str, Any]:
     try:
         return agent.decide(request_id, advisor_id, approve, comment).public()
     except KeyError:
@@ -54,16 +55,16 @@ def _decide(request_id: str, advisor_id: str, approve: bool, comment: str | None
 
 
 @app.post("/requests/{request_id}/approve")
-def approve(request_id: str, body: Decision, x_advisor_id: str = Header(...)):
+def approve(request_id: str, body: Decision, x_advisor_id: str = Header(...)) -> dict[str, Any]:
     return _decide(request_id, x_advisor_id, True, body.comment)
 
 
 @app.post("/requests/{request_id}/reject")
-def reject(request_id: str, body: Decision, x_advisor_id: str = Header(...)):
+def reject(request_id: str, body: Decision, x_advisor_id: str = Header(...)) -> dict[str, Any]:
     return _decide(request_id, x_advisor_id, False, body.comment)
 
 
 @app.get("/audit/verify")
-def verify():
+def verify() -> dict[str, Any]:
     ok, lines, msg = agent.audit.verify()
     return {"ok": ok, "lines": lines, "message": msg}

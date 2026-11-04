@@ -1,7 +1,16 @@
 import pytest
 
-from advisor.guardrails import (REMOVED, NoteContext, Redactor, allowed_numbers, check_note,
-                                clients_mentioned, detect_injection, scan_tool_output, validate_input)
+from advisor.guardrails import (
+    REMOVED,
+    NoteContext,
+    Redactor,
+    allowed_numbers,
+    check_note,
+    clients_mentioned,
+    detect_injection,
+    scan_tool_output,
+    validate_input,
+)
 
 CLIENTS = [{"client_id": 1042, "name": "Thomas Brandt"}, {"client_id": 1033, "name": "Mette Bech"}]
 CATALOG = [{"product_id": "P06", "name": "Global Equity Index", "risk_class": 5},

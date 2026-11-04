@@ -11,6 +11,7 @@ import random
 import sqlite3
 from datetime import date, timedelta
 from pathlib import Path
+from typing import Any
 
 DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "synthetic.json"
 AS_OF = date(2026, 10, 26)  # fixed "today" so tool results never depend on the clock
@@ -53,7 +54,7 @@ MEMOS_IN = ["Monthly savings plan", "Dividend received", "Transfer from salary a
 MEMOS_OUT = ["Fund purchase", "Tax payment", "Pension contribution", "Advisory fee", "Transfer to own account"]
 
 
-def generate(seed: int = 42) -> dict:
+def generate(seed: int = 42) -> dict[str, Any]:
     rng = random.Random(seed)
     clients, holdings, transactions = [], [], []
     used_names = set()

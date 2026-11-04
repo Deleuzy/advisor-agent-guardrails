@@ -13,7 +13,7 @@ def test_tampering_is_detected(tmp_path):
     e["n"] = 99
     lines[1] = json.dumps(e)
     log.path.write_text("\n".join(lines) + "\n")
-    ok, line, msg = log.verify()
+    ok, line, _msg = log.verify()
     assert not ok and line == 2
 
 
